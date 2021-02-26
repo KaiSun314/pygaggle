@@ -124,15 +124,18 @@ def main():
 
     evaluator = ReaderEvaluator(reader)
 
-    max_topk_passages = max(options.topk_em)
     examples = []
     for _, item in data.items():
         examples.append(
             RetrievalExample(
                 query=Query(text=item["question"]),
                 texts=list(map(lambda context: Text(text=context["text"].split('\n', 1)[1].replace('""', '"'),
-                                                    title=context["text"].split('\n', 1)[0].replace('"', '')),
-                               item["contexts"]))[: max_topk_passages],
+                                                    title=context["text"].split('\n', 1)[0].replace('"', ''),
+                                                    docid=context["docid"],
+                                                    hybrid_score=context["hybrid_score"],
+                                                    bm25_score=context["bm25_score"],
+                                                    dpr_score=context["dpr_score"]),
+                               item["contexts"])),
                 ground_truth_answers=item["answers"],
             )
         )
@@ -141,10 +144,6 @@ def main():
     ems = evaluator.evaluate(examples, options.topk_em, dpr_predictions)
 
     logging.info('Reader completed')
-
-    for k in options.topk_em:
-        em = np.mean(np.array(ems[k])) * 100.
-        logging.info(f'Top{k}\tExact Match Accuracy: {em}')
 
     if args.output_file is not None:
         with open(args.output_file, 'w', encoding='utf-8', newline='\n') as f:

@@ -268,21 +268,12 @@ class ReaderEvaluator:
         ems = {k: [] for k in topk_em}
         for example in tqdm(examples):
             answers = self.reader.predict(example.query, example.texts, topk_em)
-            ground_truth_answers = example.ground_truth_answers
-
-            topk_prediction = {}
-
-            for k in topk_em:
-                best_answer = answers[k][0].text
-                em_hit = max([ReaderEvaluator.exact_match_score(best_answer, ga) for ga in ground_truth_answers])
-                ems[k].append(em_hit)
-
-                topk_prediction[f'top{k}'] = best_answer
 
             if dpr_predictions is not None:
                 dpr_predictions.append({
                     'question': example.query.text,
-                    'prediction': topk_prediction,
+                    'ground_truth_answers': example.ground_truth_answers,
+                    'contexts': answers,
                 })
 
         return ems

@@ -60,56 +60,54 @@ class DensePassageRetrieverReader(Reader):
         query: Query,
         texts: List[Text],
         milestones: Optional[List[int]] = None,
-    ) -> Dict[int, List[Answer]]:
-        if milestones is None:
-            milestones = [len(texts)]
+    ):
+        answers = []
+        for i in range(len(texts)):
+            answers.append({})
 
-        answers = {}
-        top_answers = []
-        prev_milestone = 0
+        for i in range(0, len(texts), self.batch_size):
+            encoded_inputs = self.tokenizer(
+                questions=query.text,
+                titles=list(map(lambda t: t.title, texts[i: i+self.batch_size])),
+                texts=list(map(lambda t: t.text, texts[i: i+self.batch_size])),
+                return_tensors='pt',
+                padding=True,
+                truncation=True,
+                max_length=350,
+            )
+            input_ids = encoded_inputs['input_ids'].to(self.device)
+            attention_mask = encoded_inputs['attention_mask'].to(self.device)
+            outputs = self.model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+            )
+            outputs.start_logits = outputs.start_logits.cpu().detach().numpy()
+            outputs.end_logits = outputs.end_logits.cpu().detach().numpy()
+            outputs.relevance_logits = outputs.relevance_logits.cpu().detach().numpy()
 
-        for milestone in milestones:
-            added_texts = texts[prev_milestone: milestone]
-            for i in range(0, len(added_texts), self.batch_size):
-                encoded_inputs = self.tokenizer(
-                    questions=query.text,
-                    titles=list(map(lambda t: t.title, added_texts[i: i+self.batch_size])),
-                    texts=list(map(lambda t: t.text, added_texts[i: i+self.batch_size])),
-                    return_tensors='pt',
-                    padding=True,
-                    truncation=True,
-                    max_length=350,
-                )
-                input_ids = encoded_inputs['input_ids'].to(self.device)
-                attention_mask = encoded_inputs['attention_mask'].to(self.device)
-                outputs = self.model(
-                    input_ids=input_ids,
-                    attention_mask=attention_mask,
-                )
-                outputs.start_logits = outputs.start_logits.cpu().detach().numpy()
-                outputs.end_logits = outputs.end_logits.cpu().detach().numpy()
-                outputs.relevance_logits = outputs.relevance_logits.cpu().detach().numpy()
+            predicted_spans = self.tokenizer.decode_best_spans(
+                encoded_inputs,
+                outputs,
+                self.num_spans_per_passage * self.batch_size,
+                self.max_answer_length,
+                self.num_spans_per_passage,
+            )
 
-                predicted_spans = self.tokenizer.decode_best_spans(
-                    encoded_inputs,
-                    outputs,
-                    self.num_spans,
-                    self.max_answer_length,
-                    self.num_spans_per_passage,
-                )
+            for j in range(i, i+self.batch_size):
+                if j >= len(texts):
+                    break
+                answers[j]['docid'] = texts[j].docid
+                answers[j]['hybrid_score'] = texts[j].hybrid_score
+                answers[j]['bm25_score'] = texts[j].bm25_score
+                answers[j]['dpr_score'] = texts[j].dpr_score
+                answers[j]['reader_relevance_score'] = str(outputs.relevance_logits[j-i])
+                answers[j]['answers'] = []
 
-                for span in predicted_spans:
-                    top_answers.append(
-                        Answer(
-                            text=span.text,
-                            score=span.span_score,
-                            ctx_score=span.relevance_score,
-                        )
-                    )
+            for span in predicted_spans:
+                answers[i+span.doc_id]['answers'].append({ 'span_score' : str(span.span_score), 'answer' : span.text })
+                assert answers[i+span.doc_id]['reader_relevance_score'] == str(span.relevance_score)
 
-            top_answers = sorted(top_answers, key=lambda x: (-x.ctx_score, -x.score))
-            answers[milestone] = top_answers[: self.num_spans]
-
-            prev_milestone = milestone
+        for i in range(len(texts)):
+            answers[i]['answers'] = sorted(answers[i]['answers'], reverse=True, key=lambda x : float(x['span_score']))
 
         return answers

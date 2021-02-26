@@ -49,13 +49,21 @@ class Text:
                  text: str,
                  metadata: Mapping[str, Any] = None,
                  score: Optional[float] = 0,
-                 title: Optional[str] = None):
+                 title: Optional[str] = None,
+                 docid = None,
+                 hybrid_score = None,
+                 bm25_score = None,
+                 dpr_score = None):
         self.text = text
         if metadata is None:
             metadata = dict()
         self.metadata = metadata
         self.score = score
         self.title = title
+        self.docid = docid
+        self.hybrid_score = hybrid_score
+        self.bm25_score = bm25_score
+        self.dpr_score = dpr_score
 
 
 class Reranker:
